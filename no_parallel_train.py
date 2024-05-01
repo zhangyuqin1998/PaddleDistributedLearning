@@ -1,11 +1,11 @@
 import copy
 
 import paddle
-from paddle.io import Dataset, DataLoader
+from paddle.io import Dataset, DataLoader, BatchSampler
 
 from models.no_parallel_model import SimpleLlama
 
-def optimizer_setting(config, parameter_list=None):
+def get_simple_optimizer(config, parameter_list=None):
     optimizer = paddle.optimizer.Momentum(
         learning_rate=config.base_lr,
         momentum=config.momentum_rate,
@@ -19,7 +19,7 @@ class RandomDataset(Dataset):
         self.config = config
 
     def __getitem__(self, idx):
-        input_ids = paddle.randint(low=0, high=config.vocab_size, shape=[self.config.seq_length + 1])
+        input_ids = paddle.randint(low=0, high=self.config.vocab_size, shape=[self.config.seq_length + 1])
         labels = copy.deepcopy(input_ids)[1:]
         input_ids = input_ids[:-1]
         return {
@@ -40,7 +40,7 @@ class DefaultConfig:
         self.intermediate_size = 512
         self.rms_norm_eps = 1e-6
         
-        self.epoch = 1
+        self.num_train_epochs = 1
         self.batch_size = 2
         self.batch_num = 5
         self.seq_length = 512
@@ -53,12 +53,13 @@ class DefaultConfig:
 if __name__ == "__main__":
     config = DefaultConfig()
     model = SimpleLlama(config)
-    optimizer = optimizer_setting(config, parameter_list=model.parameters())
+    optimizer = get_simple_optimizer(config, parameter_list=model.parameters())
 
     dataset = RandomDataset(config)
-    train_loader = DataLoader(dataset, batch_size=config.batch_size, num_workers=1)
+    sampler = BatchSampler(dataset, batch_size=config.batch_size, shuffle=False, drop_last=True)
+    train_loader = DataLoader(dataset, batch_sampler=sampler, num_workers=1)
 
-    for eop in range(config.epoch):
+    for eop in range(config.num_train_epochs):
         model.train()
 
         for batch_id, data in enumerate(train_loader()):
