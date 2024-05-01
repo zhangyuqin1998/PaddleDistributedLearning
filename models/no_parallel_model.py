@@ -145,6 +145,8 @@ class LlamaPretrainingCriterion(nn.Layer):
         
     def forward(self, prediction_scores, masked_lm_labels):
         with paddle.amp.auto_cast(False):
+            # prediction_scores: [bsz, seq_len, vocab_size]
+            # masked_lm_labels: [bsz, seq_len]
             masked_lm_loss = self.loss_func(prediction_scores.astype("float32"), masked_lm_labels.unsqueeze(2))
             masked_lm_loss = masked_lm_loss[masked_lm_loss > 0]
             loss = paddle.mean(masked_lm_loss)
