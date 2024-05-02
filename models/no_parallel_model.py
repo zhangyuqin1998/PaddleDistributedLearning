@@ -6,8 +6,14 @@ import paddle.nn.functional as F
 from paddle import nn
 from paddle.incubate.nn.functional import swiglu
 
+def prepare_casual_attention_mask(batch_size, seq_length, dtype):
+    mask = paddle.tril(paddle.ones((seq_length, seq_length), dtype="bool"))
+    mask = mask[None, None, :, :].expand([batch_size, 1, seq_length, seq_length])
+    mask = paddle.where(mask, 0.0, paddle.finfo(dtype).min).astype(dtype)
+    mask.stop_gradient = True
+    return mask
 
-def scaled_dot_product_attention(query_states, key_states, value_states):
+def scaled_dot_product_attention(query_states, key_states, value_states, attention_mask):
     bsz, q_len, num_heads, head_dim = query_states.shape
     
     # [bsz, seq_len, head_num, head_dim] -> [bsz, head_num, seq_len, head_dim]
@@ -16,6 +22,7 @@ def scaled_dot_product_attention(query_states, key_states, value_states):
     value_states = paddle.transpose(value_states, [0, 2, 1, 3])
     
     attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
+    attn_weights += attention_mask
     with paddle.amp.auto_cast(False):
         attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").astype(query_states.dtype)
     attn_output = paddle.matmul(attn_weights, value_states)
@@ -32,9 +39,7 @@ class LlamaRMSNorm(nn.Layer):
         self.hidden_size = config.hidden_size
         self.weight = paddle.create_parameter(
             shape=[self.hidden_size],
-            dtype=paddle.get_default_dtype(),
-            default_initializer=nn.initializer.Constant(1.0),
-        )
+            dtype=paddle.get_default_dtype())
         self.variance_epsilon = config.rms_norm_eps
         self.config = config
 
@@ -81,7 +86,8 @@ class LlamaAttention(nn.Layer):
         
     def forward(
         self,
-        hidden_states    # [bs, seq_len, num_head * head_dim]
+        hidden_states,    # [bs, seq_len, num_head * head_dim]
+        attention_mask
     ):
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
@@ -93,7 +99,7 @@ class LlamaAttention(nn.Layer):
         key_states = key_states.reshape(shape=target_key_value_shape)
         value_states = value_states.reshape(shape=target_key_value_shape)
         
-        attn_output = scaled_dot_product_attention(query_states, key_states, value_states)  # [bs, seq_len, num_head * head_dim]
+        attn_output = scaled_dot_product_attention(query_states, key_states, value_states, attention_mask)  # [bs, seq_len, num_head * head_dim]
         
         attn_output = self.o_proj(attn_output)
         return attn_output
@@ -110,17 +116,18 @@ class LlamaDecoderLayer(nn.Layer):
 
     def forward(
         self,
-        hidden_states: paddle.Tensor
+        hidden_states,
+        attention_mask
     ):
-        residual = hidden_states
+        residual = hidden_states.clone()
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        outputs = self.self_attn(hidden_states)
+        outputs = self.self_attn(hidden_states, attention_mask)
         hidden_states = residual + outputs
 
         # Fully Connected
-        residual = hidden_states
+        residual = hidden_states.clone()
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         outputs = residual + hidden_states
@@ -169,12 +176,13 @@ class SimpleLlama(nn.Layer):
      
     def forward(
         self,
-        input_ids,  # [bs, seq_len]
-        labels
+        input_ids,          # [bs, seq_len]
+        labels,             # [bs, seq_len]
     ):  
         hidden_states = self.embed_tokens(input_ids)    # [bs, seq_len, hidden_size]
+        attention_mask = prepare_casual_attention_mask(hidden_states.shape[0], hidden_states.shape[1], hidden_states.dtype)    ## [bs, 1, seq_len, seq_len]
         for _, (decoder_layer) in enumerate(self.layers):
-            hidden_states = decoder_layer(hidden_states)
+            hidden_states = decoder_layer(hidden_states, attention_mask)
         logits = self.lm_head(hidden_states)            # [bs, seq_len, vocab_size]
         loss = self.criterion(logits, labels)
         return loss

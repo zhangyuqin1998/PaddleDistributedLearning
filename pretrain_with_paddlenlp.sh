@@ -8,5 +8,10 @@ python -u  -m paddle.distributed.launch \
     --master $master:$port \
     --gpus "0" \
     --log_dir "./$distributed_log_dir" \
-    paddlenlp_train.py \
+    pretrain_with_paddlenlp.py \
     --output_dir "output" \
+    --num_train_epochs 1 \
+    --per_device_train_batch_size 4 \
+    --max_steps 2000 \
+    --logging_steps 50 \
+    --disable_tqdm true \
