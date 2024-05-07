@@ -3,7 +3,8 @@ import random
 import numpy as np
 
 import paddle
-from paddle.io import DataLoader, BatchSampler
+from paddle.distributed import fleet, get_rank
+from paddle.io import DataLoader, BatchSampler, DistributedBatchSampler
 from paddlenlp.transformers import AutoTokenizer
 from paddlenlp.data.causal_dataset import (
     build_train_valid_test_datasets,
@@ -90,7 +91,7 @@ class TrainerConfig:
         self.per_device_train_batch_size = 4
         self.max_steps = 2000
         
-        self.logging_steps = 50
+        self.logging_steps = 10
         # self.eval_iters = 10
         # self.test_iters = 100
         
@@ -99,18 +100,25 @@ class TrainerConfig:
         # self.do_predict = False
 
 class MyTrainer:
-    def __init__(self, model, config, data_collator, train_dataset, optimizer):
+    def __init__(self, model, config, data_collator, train_dataset, optimizer, dp_degree=0):
         self.config = config
         self.model = model
         self.optimizer = optimizer
         self.train_dataset = train_dataset
         self.data_collator = data_collator
+        self.dp_degree = dp_degree
         
     def train(self):
         global_step = 0
-        sampler = BatchSampler(self.train_dataset, batch_size=self.config.per_device_train_batch_size, shuffle=True)
+        if self.dp_degree <= 1:
+            sampler = BatchSampler(self.train_dataset, batch_size=self.config.per_device_train_batch_size, shuffle=False)
+        else:
+            print(f"Using DistributedBatchSampler, dp degree={self.dp_degree}")
+            sampler = DistributedBatchSampler(self.train_dataset, rank=get_rank(),
+                                              batch_size=self.config.per_device_train_batch_size,shuffle=False)
+
         train_loader = DataLoader(self.train_dataset, batch_sampler=sampler, collate_fn=self.data_collator)
-        
+
         for eop in range(self.config.num_train_epochs):
             self.model.train()
             for batch_id, data in enumerate(train_loader()):
@@ -120,7 +128,7 @@ class MyTrainer:
                 input_ids, labels = data["input_ids"], data["labels"]
                 loss = self.model(input_ids, labels)
                 loss.backward()
-                
+
                 self.optimizer.step()
                 self.model.clear_gradients()
                 if global_step % self.config.logging_steps == 0:
