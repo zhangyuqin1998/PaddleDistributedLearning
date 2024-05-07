@@ -3,9 +3,10 @@ import random
 import numpy as np
 
 import paddle
-from paddle.distributed import fleet, get_rank
-from paddle.io import DataLoader, BatchSampler, DistributedBatchSampler
+from paddle.distributed import fleet
+from paddle.io import DataLoader, DistributedBatchSampler
 from paddlenlp.transformers import AutoTokenizer
+from paddlenlp.trainer import set_seed
 from paddlenlp.data.causal_dataset import (
     build_train_valid_test_datasets,
     check_data_split,
@@ -14,10 +15,6 @@ from paddlenlp.datasets import load_dataset
 
 from models.no_parallel_model import SimpleLlama
 
-def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    paddle.seed(seed)
 
 def create_pretrained_dataset(
     data_args,
@@ -78,6 +75,11 @@ class ModelConfig:
         self.num_hidden_layers = 12
         self.intermediate_size = 512
         self.rms_norm_eps = 1e-6
+        
+        self.seq_length = 1024
+        self.tensor_parallel_degree = 1
+        self.sequence_parallel = False
+
 
 class DataConfig:
     def __init__(self):
@@ -91,7 +93,7 @@ class TrainerConfig:
         self.per_device_train_batch_size = 4
         self.max_steps = 2000
         
-        self.logging_steps = 10
+        self.logging_steps = 10        
         # self.eval_iters = 10
         # self.test_iters = 100
         
@@ -99,23 +101,39 @@ class TrainerConfig:
         # self.do_eval = False
         # self.do_predict = False
 
-class MyTrainer:
-    def __init__(self, model, config, data_collator, train_dataset, optimizer, dp_degree=0):
+def print_rank_0(*args, **kwargs):
+    if paddle.distributed.get_rank() == 0:
+        print(*args, **kwargs)
+
+
+class SimpleTrainer:
+    def __init__(self, model, config, data_collator, train_dataset, optimizer, data_parallel_degree=1, sharding_parallel_degree=1):
         self.config = config
         self.model = model
         self.optimizer = optimizer
         self.train_dataset = train_dataset
         self.data_collator = data_collator
-        self.dp_degree = dp_degree
+        self.data_parallel_degree = data_parallel_degree
+        self.sharding_parallel_degree = sharding_parallel_degree
+        
+        try:
+            hcg = fleet.get_hybrid_communicate_group()
+            self.data_parallel_rank = max(hcg.get_data_parallel_group().rank, 0)
+            self.sharding_parallel_rank = max(hcg.get_sharding_parallel_group().rank, 0)
+        except:
+            self.data_parallel_rank = 0
+            self.sharding_parallel_rank = 0
+
+    
+    def get_dataset_rank(self):
+        return max(self.sharding_parallel_degree, 1) * self.data_parallel_rank + self.sharding_parallel_rank
+
+    def get_num_replicas(self):
+        return max(self.sharding_parallel_degree, 1) * max(self.data_parallel_degree, 1)
         
     def train(self):
         global_step = 0
-        if self.dp_degree <= 1:
-            sampler = BatchSampler(self.train_dataset, batch_size=self.config.per_device_train_batch_size, shuffle=False)
-        else:
-            print(f"Using DistributedBatchSampler, dp degree={self.dp_degree}")
-            sampler = DistributedBatchSampler(self.train_dataset, rank=get_rank(),
-                                              batch_size=self.config.per_device_train_batch_size,shuffle=False)
+        sampler = DistributedBatchSampler(self.train_dataset, batch_size=self.config.per_device_train_batch_size, num_replicas=self.get_num_replicas(), rank=self.get_dataset_rank(), shuffle=False)
 
         train_loader = DataLoader(self.train_dataset, batch_sampler=sampler, collate_fn=self.data_collator)
 
@@ -132,13 +150,13 @@ class MyTrainer:
                 self.optimizer.step()
                 self.model.clear_gradients()
                 if global_step % self.config.logging_steps == 0:
-                    print(f"epoch: {eop}, global_step: {global_step}, loss: {loss.numpy()}")
+                    print_rank_0(f"epoch: {eop}, global_step: {global_step}, loss: {loss.numpy()}")
 
 
 # python no_parallel_train.py
 if __name__ == "__main__":
     data_file = ["/work/PaddleNLP/llm/llama/data/llama_openwebtext_100k"]
-    tokenizer = AutoTokenizer.from_pretrained("facebook/llama-7b")
+    tokenizer = AutoTokenizer.from_pretrained("facebook/llama-7b")  # 因为数据集已经被tokenizer处理过了，所以这里的tokenizer其实没用到，只是为了拿到vocab_size
     
     model_args, data_args, traing_args = ModelConfig(), DataConfig(), TrainerConfig()
     model_args.vocab_size = tokenizer.vocab_size
@@ -149,5 +167,5 @@ if __name__ == "__main__":
     optimizer = get_simple_optimizer(parameter_list=model.parameters())
     train_dataset, valid_dataset, test_dataset, data_collator = create_pretrained_dataset(data_args, traing_args, data_file)
 
-    trainer = MyTrainer(model, traing_args, data_collator, train_dataset, optimizer)
+    trainer = SimpleTrainer(model, traing_args, data_collator, train_dataset, optimizer)
     trainer.train()

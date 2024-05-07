@@ -5,6 +5,9 @@ import paddle.nn.functional as F
 
 from paddle import nn
 from paddle.incubate.nn.functional import swiglu
+from paddle.distributed import fleet
+from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
+
 
 def prepare_casual_attention_mask(batch_size, seq_length, dtype):
     mask = paddle.tril(paddle.ones((seq_length, seq_length), dtype="bool"))
@@ -79,9 +82,9 @@ class LlamaAttention(nn.Layer):
         self.head_dim = self.hidden_size // config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
         
-        self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias_attr=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.hidden_size, bias_attr=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.hidden_size, bias_attr=False)
+        self.q_proj = nn.Linear(self.hidden_size, self.config.num_key_value_heads * self.head_dim, bias_attr=False)
+        self.k_proj = nn.Linear(self.hidden_size, self.config.num_key_value_heads * self.head_dim, bias_attr=False)
+        self.v_proj = nn.Linear(self.hidden_size, self.config.num_key_value_heads * self.head_dim, bias_attr=False)
         self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias_attr=False)
         
     def forward(
@@ -95,7 +98,7 @@ class LlamaAttention(nn.Layer):
         
         target_query_shape = [0, 0, self.num_heads, self.head_dim]
         target_key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
-        query_states = query_states.reshape(shape=target_query_shape)   # [bs, seq_len, num_head * head_dim]
+        query_states = query_states.reshape(shape=target_query_shape)   # [bs, seq_len, num_head, head_dim]
         key_states = key_states.reshape(shape=target_key_value_shape)
         value_states = value_states.reshape(shape=target_key_value_shape)
         
@@ -119,7 +122,7 @@ class LlamaDecoderLayer(nn.Layer):
         hidden_states,
         attention_mask
     ):
-        residual = hidden_states.clone()
+        residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
@@ -127,7 +130,7 @@ class LlamaDecoderLayer(nn.Layer):
         hidden_states = residual + outputs
 
         # Fully Connected
-        residual = hidden_states.clone()
+        residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         outputs = residual + hidden_states
