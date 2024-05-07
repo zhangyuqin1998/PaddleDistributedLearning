@@ -222,6 +222,7 @@ class SimpleLlama(nn.Layer):
         attention_mask = prepare_casual_attention_mask(hidden_states.shape[0], hidden_states.shape[1], hidden_states.dtype)    ## [bs, 1, seq_len, seq_len]
         for _, (decoder_layer) in enumerate(self.layers):
             hidden_states = decoder_layer(hidden_states, attention_mask)
+        hidden_states = self.norm(hidden_states)
         logits = self.lm_head(hidden_states)            # [bs, seq_len, vocab_size // mp_degree]
         loss = self.criterion(logits, labels)
         return loss

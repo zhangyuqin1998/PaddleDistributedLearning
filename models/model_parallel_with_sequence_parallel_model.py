@@ -283,7 +283,7 @@ class SimpleLlama(nn.Layer):
             hidden_states = ScatterOp.apply(hidden_states)
         for _, (decoder_layer) in enumerate(self.layers):
             hidden_states = decoder_layer(hidden_states, attention_mask)
-
+        hidden_states = self.norm(hidden_states)
         logits = self.lm_head(hidden_states)            # [bs, seq_len, vocab_size // mp_degree]
         loss = self.criterion(logits, labels)
         return loss
