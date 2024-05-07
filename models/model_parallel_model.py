@@ -219,7 +219,7 @@ class SimpleLlama(nn.Layer):
         labels,             # [bs, seq_len]
     ):  
         hidden_states = self.embed_tokens(input_ids)    # [bs, seq_len, hidden_size]
-        attention_mask = prepare_casual_attention_mask(hidden_states.shape[0], hidden_states.shape[1], hidden_states.dtype)    ## [bs, 1, seq_len, seq_len]
+        attention_mask = prepare_casual_attention_mask(hidden_states.shape[0], hidden_states.dtype, self.config)    ## [bs, 1, seq_len, seq_len]
         for _, (decoder_layer) in enumerate(self.layers):
             hidden_states = decoder_layer(hidden_states, attention_mask)
         hidden_states = self.norm(hidden_states)

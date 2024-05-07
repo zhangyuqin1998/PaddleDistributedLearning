@@ -40,5 +40,5 @@ if __name__ == "__main__":
     model = fleet.distributed_model(model)
     optimizer = fleet.distributed_optimizer(optimizer)
 
-    trainer = SimpleTrainer(model, traing_args, data_collator, train_dataset, optimizer, data_parallel_degree=dist_strategy.hybrid_configs["dp_degree"])
+    trainer = SimpleTrainer(model, traing_args, data_collator, train_dataset, optimizer)
     trainer.train()

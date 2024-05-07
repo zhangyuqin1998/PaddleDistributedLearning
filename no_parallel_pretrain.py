@@ -78,6 +78,7 @@ class ModelConfig:
         
         self.seq_length = 1024
         self.tensor_parallel_degree = 1
+        self.segment_parallel_degree = 1
         self.sequence_parallel = False
 
 

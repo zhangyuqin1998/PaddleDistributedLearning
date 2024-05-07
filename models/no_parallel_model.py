@@ -5,13 +5,12 @@ import paddle.nn.functional as F
 
 from paddle import nn
 from paddle.incubate.nn.functional import swiglu
-from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
 
 
-def prepare_casual_attention_mask(batch_size, seq_length, dtype):
-    mask = paddle.tril(paddle.ones((seq_length, seq_length), dtype="bool"))
-    mask = mask[None, None, :, :].expand([batch_size, 1, seq_length, seq_length])
+def prepare_casual_attention_mask(batch_size, dtype, config):
+    mask = paddle.tril(paddle.ones((config.seq_length, config.seq_length), dtype="bool"))
+    mask = mask[None, None, :, :].expand([batch_size, 1, config.seq_length, config.seq_length])
     mask = paddle.where(mask, 0.0, paddle.finfo(dtype).min).astype(dtype)
     mask.stop_gradient = True
     return mask
@@ -183,7 +182,7 @@ class SimpleLlama(nn.Layer):
         labels,             # [bs, seq_len]
     ):  
         hidden_states = self.embed_tokens(input_ids)    # [bs, seq_len, hidden_size]
-        attention_mask = prepare_casual_attention_mask(hidden_states.shape[0], hidden_states.shape[1], hidden_states.dtype)    ## [bs, 1, seq_len, seq_len]
+        attention_mask = prepare_casual_attention_mask(hidden_states.shape[0], hidden_states.dtype, self.config)    ## [bs, 1, seq_len, seq_len]
         for _, (decoder_layer) in enumerate(self.layers):
             hidden_states = decoder_layer(hidden_states, attention_mask)
         hidden_states = self.norm(hidden_states)

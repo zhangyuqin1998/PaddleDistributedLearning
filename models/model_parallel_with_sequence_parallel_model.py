@@ -273,7 +273,7 @@ class SimpleLlama(nn.Layer):
     ):  
         hidden_states = self.embed_tokens(input_ids)    # [bs, seq_len, hidden_size]
             
-        attention_mask = prepare_casual_attention_mask(hidden_states.shape[0], hidden_states.shape[1], hidden_states.dtype)    ## [bs, 1, seq_len, seq_len]
+        attention_mask = prepare_casual_attention_mask(hidden_states.shape[0], hidden_states.dtype, self.config)    ## [bs, 1, seq_len, seq_len]
 
         if self.config.sequence_parallel:
             bs, seq_len, hidden_size = hidden_states.shape

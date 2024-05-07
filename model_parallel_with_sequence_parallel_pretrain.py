@@ -46,5 +46,5 @@ if __name__ == "__main__":
     if model_args.sequence_parallel:
         sequence_parallel_utils.register_sequence_parallel_allreduce_hooks(model, 1, False)
         
-    trainer = SimpleTrainer(model, traing_args, data_collator, train_dataset, optimizer, data_parallel_degree=dist_strategy.hybrid_configs["dp_degree"])
+    trainer = SimpleTrainer(model, traing_args, data_collator, train_dataset, optimizer)
     trainer.train()
