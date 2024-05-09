@@ -15,3 +15,9 @@ python -u  -m paddle.distributed.launch \
     --max_steps 2000 \
     --logging_steps 50 \
     --disable_tqdm true \
+    --sequence_parallel false \
+    --tensor_parallel_degree 1 \
+    --sep_parallel_degree 1 \
+    --sharding_parallel_degree 1 \
+    --pipeline_parallel_degree 1 \
+

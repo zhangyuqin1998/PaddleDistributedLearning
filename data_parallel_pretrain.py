@@ -20,7 +20,6 @@ dist_strategy.hybrid_configs = {
 }
 
 
-
 # python -m paddle.distributed.launch --gpus=0,1,2,3 --log_dir logs data_parallel_pretrain.py
 if __name__ == "__main__":
     fleet.init(is_collective=True, strategy=dist_strategy)
@@ -29,7 +28,7 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained("facebook/llama-7b")
     
     model_args, data_args, traing_args = ModelConfig(), DataConfig(), TrainerConfig()
-    traing_args.per_device_train_batch_size //= dist_strategy.hybrid_configs["dp_degree"]
+    # traing_args.per_device_train_batch_size //= dist_strategy.hybrid_configs["dp_degree"]
     model_args.vocab_size = tokenizer.vocab_size
 
     set_seed(42)

@@ -3,6 +3,7 @@ from no_parallel_pretrain import (
     ModelConfig, get_simple_optimizer, create_pretrained_dataset, set_seed
 )
 from models.no_parallel_model import SimpleLlama
+from models.pipeline_parallel_model import SimpleLlamaPipe
 
 from dataclasses import dataclass, field
 
@@ -20,13 +21,13 @@ class ModelArguments:
     num_key_value_heads: int = field(default=8)
     num_hidden_layers:int = field(default=12)
     intermediate_size: int = field(default=512)
+    sequence_parallel: bool = field(default=False)
 
 @dataclass
 class DataArguments:
     split: str = field(default="949,50,1", metadata={"help": "Train/valid/test data split."})
     max_seq_length: int = field(default=1024)
     data_impl: str = field(default="mmap", metadata={"help": "The format of the preprocessed data."})
-
     
 def main():
     parser = PdArgumentParser((ModelArguments, DataArguments, TrainingArguments))
@@ -42,10 +43,18 @@ def main():
     config.num_key_value_heads = model_args.num_key_value_heads
     config.num_hidden_layers = model_args.num_hidden_layers
     config.intermediate_size = model_args.intermediate_size
+    config.sequence_parallel = model_args.sequence_parallel
+    config.tensor_parallel_degree = training_args.tensor_parallel_degree
+    config.segment_parallel_degree = training_args.sep_parallel_degree
 
     set_seed(42)
     
-    model = SimpleLlama(config)
+    # 如果要使用分布式能力，就需要对这个模型进行完整的分布式改造，从mp到pp到sep
+    if training_args.pipeline_parallel_degree > 1:
+        model = SimpleLlamaPipe(config)
+    else:
+        model = SimpleLlama(config)
+
     optimizer = get_simple_optimizer(parameter_list=model.parameters())
     train_dataset, valid_dataset, test_dataset, data_collator = create_pretrained_dataset(data_args, training_args, data_file)
     

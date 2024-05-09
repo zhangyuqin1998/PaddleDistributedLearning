@@ -17,11 +17,6 @@ dist_strategy.hybrid_configs = {
 }
 
 
-def print_rank_0(*args, **kwargs):
-    if paddle.distributed.get_rank() == 0:
-        print(*args, **kwargs)
-
-
 # python -m paddle.distributed.launch --gpus=0,1,2,3 --log_dir logs model_parallel_with_sequence_parallel_pretrain.py
 if __name__ == "__main__":
     fleet.init(is_collective=True, strategy=dist_strategy)
