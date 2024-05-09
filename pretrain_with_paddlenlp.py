@@ -1,9 +1,10 @@
+from paddle.distributed import fleet
 
 from no_parallel_pretrain import (
-    ModelConfig, get_simple_optimizer, create_pretrained_dataset, set_seed
+    get_simple_optimizer, create_pretrained_dataset, set_seed
 )
-from models.no_parallel_model import SimpleLlama
-from models.pipeline_parallel_model import SimpleLlamaPipe
+from models.paddlenlp_model import SimpleLlama, ModelConfig
+from models.paddlenlp_model_pp import SimpleLlamaPipe, ModelConfigPipe
 
 from dataclasses import dataclass, field
 
@@ -36,7 +37,10 @@ def main():
     
     tokenizer = AutoTokenizer.from_pretrained("facebook/llama-7b")
 
-    config = ModelConfig()
+    if training_args.pipeline_parallel_degree > 1:
+        config = ModelConfigPipe()
+    else:
+        config = ModelConfig()
     config.vocab_size = tokenizer.vocab_size
     config.hidden_size = model_args.hidden_size
     config.num_attention_heads = model_args.num_attention_heads
@@ -51,13 +55,18 @@ def main():
     
     # 如果要使用分布式能力，就需要对这个模型进行完整的分布式改造，从mp到pp到sep
     if training_args.pipeline_parallel_degree > 1:
-        model = SimpleLlamaPipe(config)
+        cls = SimpleLlamaPipe
+        hcg = fleet.get_hybrid_communicate_group()
+        model = cls(config, num_stages=training_args.pipeline_parallel_degree, topology=hcg._topo)
     else:
-        model = SimpleLlama(config)
+        cls = SimpleLlama
+        model = cls(config)
 
     optimizer = get_simple_optimizer(parameter_list=model.parameters())
     train_dataset, valid_dataset, test_dataset, data_collator = create_pretrained_dataset(data_args, training_args, data_file)
     
+    # model.save_pretrained(training_args.output_dir)
+    # model = cls.from_pretrained(training_args.output_dir)
     trainer = Trainer(
         model=model,
         args=training_args,
