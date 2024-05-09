@@ -10,6 +10,7 @@ from paddle.distributed.fleet.utils.sequence_parallel_utils import (
         ScatterOp,
         mark_as_sequence_parallel_parameter,
     )
+from paddle.distributed.fleet.layers.mpu.random import get_rng_state_tracker
 
 from .no_parallel_model import (
     scaled_dot_product_attention, prepare_casual_attention_mask
@@ -175,7 +176,12 @@ class LlamaLMHead(nn.Layer):
             vocab_size = config.vocab_size // config.tensor_parallel_degree
         else:
             vocab_size = config.vocab_size
-        self.weight = self.create_parameter(shape=[config.hidden_size, vocab_size])
+
+        if vocab_size != config.vocab_size:
+            with get_rng_state_tracker().rng_state():
+                self.weight = self.create_parameter(shape=[config.hidden_size, vocab_size])
+        else:
+            self.weight = self.create_parameter(shape=[config.hidden_size, vocab_size])
         
         if config.tensor_parallel_degree > 1:
             # 手动切分参数时, 需要设置is_distributed为True, distributed_model中广播参数时就会把这些切分的参数跳过

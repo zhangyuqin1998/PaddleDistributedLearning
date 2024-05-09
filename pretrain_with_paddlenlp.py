@@ -1,3 +1,6 @@
+import os
+
+import paddle
 from paddle.distributed import fleet
 
 from no_parallel_pretrain import (
@@ -57,16 +60,17 @@ def main():
     if training_args.pipeline_parallel_degree > 1:
         cls = SimpleLlamaPipe
         hcg = fleet.get_hybrid_communicate_group()
-        model = cls(config, num_stages=training_args.pipeline_parallel_degree, topology=hcg._topo)
+        model = cls(config)
     else:
         cls = SimpleLlama
         model = cls(config)
 
     optimizer = get_simple_optimizer(parameter_list=model.parameters())
     train_dataset, valid_dataset, test_dataset, data_collator = create_pretrained_dataset(data_args, training_args, data_file)
-    
-    # model.save_pretrained(training_args.output_dir)
-    # model = cls.from_pretrained(training_args.output_dir)
+
+    # model.save_pretrained(training_args.output_dir, variant=f"pp{fleet.get_hybrid_communicate_group().get_stage_id():0>2d}")
+    # model = cls.from_pretrained(os.path.join(training_args.output_dir, ""))
+    # load_layer_state_dict = paddle.load(os.path.join(training_args.output_dir, "model_state.pp00.pdparams"))
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -74,8 +78,9 @@ def main():
         train_dataset=train_dataset,
         optimizers=(optimizer, None)
     )
-    
+
+    trainer.save_model(training_args.output_dir)
     _ = trainer.train()
-    
+
 if __name__ == "__main__":
     main()

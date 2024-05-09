@@ -4,6 +4,8 @@ from paddle.distributed.fleet.meta_parallel import (
     LayerDesc,
     PipelineLayer,
 )
+from paddle.distributed.fleet.layers.mpu.random import get_rng_state_tracker
+
 from .no_parallel_model import (
     LlamaDecoderLayer,
     LlamaRMSNorm,

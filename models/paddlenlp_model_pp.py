@@ -1,5 +1,5 @@
 from paddle import nn
-
+from paddle.distributed import fleet
 from paddle.distributed.fleet.meta_parallel import (
     LayerDesc,
     PipelineLayer,
@@ -79,16 +79,14 @@ class LlamaLlamaRMSNormPipe(nn.Layer):
 
 class PipelineLlamaPretrainedModel(PipelinePretrainedModel):
     config_class=ModelConfigPipe
-    
 
-class SimpleLlamaPipe(PipelineLlamaPretrainedModel, PipelineLayer):
-    def __init__(self, config, **kwargs):
+class SimpleLlamaPipe(PipelineLlamaPretrainedModel, PipelineLayer):    
+    def __init__(self, config):
         self.config = config
-        decs = []
-        decs.append(LayerDesc(LlamaEmbeddingPipe, config=config))
-        decs.append(LayerDesc(PrepareCasualAttentionMaskPipe, config=config))
+        self.add_sequential_layer(LayerDesc(LlamaEmbeddingPipe, config=config))
+        self.add_sequential_layer(LayerDesc(PrepareCasualAttentionMaskPipe, config=config))
         for _ in range(config.num_hidden_layers):
-            decs.append(LayerDesc(LlamaDecoderLayerPipe, config=config))
-        decs.append(LayerDesc(LlamaLlamaRMSNormPipe, config=config))
-        decs.append(LayerDesc(LlamaLMHead, config=config))
-        PipelineLayer.__init__(self, layers=decs,loss_fn=LlamaPretrainingCriterion(config), **kwargs)
+            self.add_sequential_layer(LayerDesc(LlamaDecoderLayerPipe, config=config))
+        self.add_sequential_layer(LayerDesc(LlamaLlamaRMSNormPipe, config=config))
+        self.add_sequential_layer(LayerDesc(LlamaLMHead, config=config))
+        PipelineLayer.__init__(self, layers=self.get_sequential_layers(),loss_fn=LlamaPretrainingCriterion(config), topology=fleet.get_hybrid_communicate_group().topology())

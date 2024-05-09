@@ -6,7 +6,7 @@ rm -rf $distributed_log_dir
 
 python -u  -m paddle.distributed.launch \
     --master $master:$port \
-    --gpus "0,1,2,3" \
+    --gpus "4,5,6,7" \
     --log_dir "./$distributed_log_dir" \
     pretrain_with_paddlenlp.py \
     --output_dir "output" \
@@ -16,8 +16,8 @@ python -u  -m paddle.distributed.launch \
     --logging_steps 50 \
     --disable_tqdm true \
     --sequence_parallel false \
-    --tensor_parallel_degree 4 \
+    --tensor_parallel_degree 1 \
     --sep_parallel_degree 1 \
     --sharding_parallel_degree 1 \
-    --pipeline_parallel_degree 1 \
+    --pipeline_parallel_degree 4 \
 
